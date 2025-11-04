@@ -1,6 +1,7 @@
 ﻿#include <SimpleIni.h>
 
 bool g_enableDebugLog = false;
+bool g_excludeAddonNodeNifs = true;
 
 bool LoadINI()
 {
@@ -12,21 +13,49 @@ bool LoadINI()
 	ini.SetUnicode();
 	ini.LoadFile(path.c_str());
 
-	g_enableDebugLog = ini.GetBoolValue("Debug", "EnableDebugLog");
+	constexpr const char* section = "Settings";
+	g_enableDebugLog = ini.GetBoolValue(section, "bEnableDebugLog");
+	g_excludeAddonNodeNifs = ini.GetBoolValue(section, "bExcludeAddonNodeNifs");
 	return true;
 }
 
 struct BSLightingShader_SetupGeometry
 {
-	static void writeLog(const RE::BSGeometry* obj)
+	static bool hasAddonNode(const RE::BSGeometry* obj)
+	{
+		if (!obj || !g_excludeAddonNodeNifs)
+			return false;
+
+		const RE::BSFadeNode* fadeNode = nullptr;
+		RE::NiNode* parent = obj->parent;
+
+		while (parent && !fadeNode)
+		{
+			fadeNode = parent->AsFadeNode();
+			parent = parent->parent;
+		}
+
+		if (fadeNode)
+		{
+			if (const auto extraData = fadeNode->GetExtraData<RE::BSXFlags>("BSX"))
+			{
+				constexpr auto mask = static_cast<std::int32_t>(RE::BSXFlags::Flag::kAddon);
+				return (extraData->value & mask) != 0;
+			}
+		}
+
+		return false;
+	}
+
+	static void writeSuccessLog(const RE::BSGeometry* obj)
 	{
 		const auto data = obj ? obj->GetUserData() : nullptr;
 		if (!data)
 			return;
 
 		const auto base = data->GetBaseObject();
-		const std::string baseMessage = base ? std::format("{:08X}", base->GetFormID()) : "Unknown";
-		SKSE::log::debug("Removed Rim Lighting on {:08X} with base object {}", data->GetFormID(), baseMessage);
+		const std::string baseMessage = base ? std::format("{:08X} - {}", base->GetFormID(), RE::FormTypeToString(base->GetFormType())) : "Unknown";
+		SKSE::log::debug("Removed Rim Lighting on {:08X} - {} with base object {}", data->GetFormID(), RE::FormTypeToString(data->GetFormType()), baseMessage);
 	}
 
 	static void thunk(RE::BSShader* shader, RE::BSRenderPass* pass, std::uint32_t flags)
@@ -35,13 +64,13 @@ struct BSLightingShader_SetupGeometry
 
 		const auto prop = pass ? pass->shaderProperty : nullptr;
 
-		if (prop && prop->flags.any(RE::BSShaderProperty::EShaderPropertyFlag::kRimLighting))
+		if (prop && prop->flags.any(RE::BSShaderProperty::EShaderPropertyFlag::kRimLighting) && !hasAddonNode(pass->geometry))
 		{
 			prop->SetFlags(RE::BSShaderProperty::EShaderPropertyFlag8::kRimLighting, false);
 
 			if (g_enableDebugLog)
 			{
-				writeLog(pass->geometry);
+				writeSuccessLog(pass->geometry);
 			}
 		}
 	}
