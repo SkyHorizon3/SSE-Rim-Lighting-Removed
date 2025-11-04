@@ -1,0 +1,11 @@
+{
+  "name": "rimlightingremoved",
+  "version-string": "1.0.0",
+  "description": "Rim Lighting Removed",
+  "license": "GPL-3.0",
+  "dependencies": [
+    "commonlibsse-ng",
+    "simpleini"
+  ],
+  "builtin-baseline": "8ce02b3d9a447071083436ad36f318dd19dd19ad"
+}
